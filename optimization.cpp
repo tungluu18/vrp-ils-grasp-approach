@@ -471,12 +471,17 @@ string verify(double min_cost, vi rout)
         return "False\n";
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    string filename = "X-n153-k22.vrp";
+    if (argc > 1) filename = argv[1];
+
+    // fast read write on file
     ios_base::sync_with_stdio(false);
+    
     // get directory containing .vrp files
     const string fileDir = string(filesys::current_path()) + "/X/";
-
+    
     // for all file in a directory
     for (auto &p : filesys::directory_iterator(fileDir))
     {
@@ -485,14 +490,14 @@ int main()
 
     // testing on reading a .vrp file
     X.clear();
-    readFile(fileDir + "X-n153-k22.vrp", X);
-    X[0] = Node(1, -1, 0);
-    // checkFile(X, fileDir + "check.txt");
-        
-    
-    pair < double, vi > answer = iterated_local_search();
-    // pair < double, vi > answer = local_search(initialize_solution(X));
+    readFile(fileDir + filename, X);
+
+    X[0] = Node(1, -1, 0);  // X[0] is the depot
+
+    // solution obtained by ils algorithm                
+    pair < double, vi > answer = iterated_local_search();    
     cerr << answer.first << endl;
+    
     // cerr << verify(answer.first, answer.second);
     outFile(answer.first, answer.second, fileDir + "MyAnswer.sol");
     return 0;
