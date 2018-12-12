@@ -1,6 +1,7 @@
 #ifndef InitialSolution_H
 #define InitialSolution_H
 
+#include "Variables.h"
 #include "Node.h"
 
 #include <bits/stdc++.h>
@@ -12,8 +13,7 @@ using namespace std;
  * @output: a permutation of customers that presents a route solution initially
  */
 class InitialSolution {
-private:
-    int CAPACITY, N;
+private:    
     vector <Node> P;
     double density[1005][1005];
 
@@ -22,12 +22,12 @@ public:
         P.clear();
     }
 
-    InitialSolution(int _N, int _CAPACITY, const vector <Node> &_P): N(_N), CAPACITY(_CAPACITY) {
+    InitialSolution(const vector <Node> &_P) {
         P.clear();
         for (auto p: _P) P.push_back(p);
     }
     
-    vector <Node> run() {                
+    vector <Node> execute() {                
         double cost = 0.0;
         vector <Node> res;
         vector <int> chosen(N + 5, 0);  // whether a node has been visited

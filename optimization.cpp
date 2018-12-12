@@ -2,30 +2,20 @@
 #include <fstream>
 #include <experimental/filesystem>
 
-#include "control_IO.h"
+#include "Variables.h"
 #include "Node.h"
 #include "InitialSolution.h"
+#include "LocalSearch.h"
+#include "Util.h"
 
 #define sqr(a) ((a) * (a))
 #define EPS 0.000001
 
-#define DEBUG 0
-
 using namespace std;
 namespace filesys = std::experimental::filesystem;
 
-// struct Node {
-//     int x, y, demand, id;
-//     Node() {}
-//     Node(int _x, int _y, int _demand) : x(_x), y(_y), demand(_demand) {}
-// };
-
-typedef vector < int > vi;
-typedef vector < Node > vNode;
-// Global Variables
-int N;
-int CAPACITY;
-vector < Node > X;
+typedef vector <int> vi;
+typedef vector <Node> vNode;
 
 bool isNumber(string s) {
     for (int i = 0; i < s.size(); ++i) if (s[i] < '0' || s[i] > '9') return false;
@@ -78,16 +68,6 @@ void readFile(const string filepath, vector<Node> &X) {
                 ss >> X[i+1].demand;
             }
         }
-        // if (headline == "DEPOT_SECTION")
-        // {
-        //     getline(fi, line, '\n');    
-        //     stringstream ss(line);  
-        //     ss >> X[0].x;
-
-        //     getline(fi, line, '\n');    
-        //     ss << line;  
-        //     ss >> X[0].y;
-        // }
     }
 
     fi.close();
@@ -120,217 +100,19 @@ void outFile(double min_cost, vi rout, string fileout) {
     of.close();
 }
 
-// double distance(Node P, Node Q) 
-// {
-//     return sqrt(sqr(P.x - Q.x) + sqr(P.y - Q.y));
-// }
-
-double distance_index(int i, int j)
-{
-    return distance(X[i], X[j]);
-}
-
 vNode convert_rout_to_nodes(const vi rout) {
     vNode result(1, X[0]);
     for (auto r: rout) if (r) result.push_back(X[r]);
     return result;
 }
 
-pair < double, vi > calculate_split(const vector < Node > &P) {
-    vector < double > dp(N+5);
-    vector < double > trace(N+5);
-    vi rout;
-    dp[0] = 0.0;
-    for (int i = 1; i <= N; ++i) {
-        dp[i] = 1e10;
-        int cap = 0;
-        double dist = 0.0;
-        // if (DEBUG) cerr << "Debugging on " << i << "\n";
-        for (int j = i; j > 0; --j) {
-            cap += P[j].demand;
-            if (j < i) dist += distance(P[j], P[j+1]);          
-            if (cap > CAPACITY) break;
-            if (dist + distance(P[0], P[i]) + distance(P[0], P[j]) + dp[j-1] < dp[i]) {
-                dp[i] = dp[j-1] + distance(P[0], P[i]) + distance(P[0], P[j]) + dist;
-                trace[i] = j;
-                // if (DEBUG) cerr << cap << "\n";
-            }
-        }
-    }
+pair <double, vi> iterated_local_search() {    
+    vector <Node> P = (new InitialSolution(X))->execute();
     
-    // tracing routes   
-    rout.push_back(0);
-    if (DEBUG) cerr << "Capacity debug on each rout:\n";
-    for (int u = N; u > 0; u = trace[u] - 1) {                    
-        for (int i = trace[u]; i <= u; ++i) rout.push_back(P[i].id);
-        rout.push_back(0);
-        // if (DEBUG) cerr << trace[u] << " " << u << "\n";
-        // if (DEBUG) cerr << cap << endl;
-    }
+    pair <double, vi> result = (new LocalSearch(P))->execute();
 
-    return {dp[N], rout};
-}
-
-vi calculate_cap_rout(const vi &rout) {
-    vi result(N+1);
-    int start = 0, cap = 0;
-    for (int i = 1; i <= N; ++i) {
-        if (!rout[i]) {
-            for (int j = start+1; j < i; ++j) result[j] = cap;
-            cap = 0;
-            start = i;
-        }
-        else {
-            cap += X[rout[i]].demand;
-        }
-    }
-    return result;
-}
-
-pair <double, vi> swap_movement(double current_min_cost, const vi &rout) {    
-    double new_min_cost = current_min_cost;
-    vi in_capacity = calculate_cap_rout(rout);
-    int u = -1, v = -1;
-    
-    for (int i = 0; i < rout.size(); ++i) if (rout[i]) {
-        for (int j = i+1; j < rout.size(); ++j) if (rout[j]) {
-            // try to swap rout[i] and rout[j]
-            double new_cost = current_min_cost;
-
-            if (i+1 == j) {
-                new_cost -= distance_index(rout[i-1], rout[i]) + distance_index(rout[i+1], rout[i+2]);
-                new_cost += distance_index(rout[i-1], rout[i+1]) + distance_index(rout[i], rout[i+2]);
-            } else {
-                // check constraint on capacity
-                if (in_capacity[i] - X[rout[i]].demand + X[rout[j]].demand > CAPACITY) continue;
-                if (in_capacity[j] - X[rout[j]].demand + X[rout[i]].demand > CAPACITY) continue;
-
-                // remove rout[i] and rout[j] from routing path
-                new_cost -= distance_index(rout[i-1], rout[i]) + distance_index(rout[i], rout[i+1]);
-                new_cost -= distance_index(rout[j-1], rout[j]) + distance_index(rout[j], rout[j+1]);
-                
-                // add rout[j] between rout[i-1] and rout[i+1]
-                new_cost += distance_index(rout[i-1], rout[j]) + distance_index(rout[j], rout[i+1]);
-
-                // add rout[i] between rout[j-1] and rout[j+1]
-                new_cost += distance_index(rout[j-1], rout[i]) + distance_index(rout[i], rout[j+1]);
-            }
-            
-            if (new_cost < new_min_cost) {
-                new_min_cost = new_cost;
-                u = i, v = j;
-            }
-        }
-    }
-
-    if (u == -1) // cannot find a pair to swap that reduces the cost    
-        return {current_min_cost, rout};    
-
-    vi new_rout = rout;  
-    swap(new_rout[u], new_rout[v]);
-    vNode P = convert_rout_to_nodes(new_rout);
-    return calculate_split(P);
-}
-
-pair <double, vi> shift_movement(double current_min_cost, const vi &rout) {    
-    double new_min_cost = current_min_cost;
-    vi in_capacity = calculate_cap_rout(rout);
-    int u = -1, v = -1;
-    
-    for (int i = 0; i < rout.size(); ++i) if (rout[i]) {
-        for (int j = 0; j+1 < rout.size(); ++j) if (j+1 != i) {
-            // check constraint on capacity
-            if (in_capacity[j] + X[rout[i]].demand > CAPACITY) continue;
-
-            // try to relocate rout[i] after rout[j]
-            double new_cost = current_min_cost;
-            
-            // remove rout[i]
-            new_cost -= distance_index(rout[i-1], rout[i]) + distance_index(rout[i], rout[i+1]);
-
-            // insert rout[i] between rout[j] and rout[j+1]
-            new_cost -= distance_index(rout[j], rout[j+1]);
-            new_cost += distance_index(rout[j], rout[i]) + distance_index(rout[i], rout[j+1]);
-            
-            if (new_cost < new_min_cost) {
-                new_min_cost = new_cost;
-                u = i, v = j;
-            }
-        }
-    }
-
-    if (u == -1)
-        return {current_min_cost, rout};
-
-    vi new_rout = rout;    
-    new_rout.insert(new_rout.begin() + v, rout[u]);  // insert rout[u] after rout[v]
-    if (v < u) 
-        new_rout.erase(new_rout.begin() + u + 1);
-    else 
-        new_rout.erase(new_rout.begin() + u);
-    vNode P = convert_rout_to_nodes(new_rout);
-    return calculate_split(P);
-}
-
-pair <double, vi> _2_opt_movement(double current_min_cost, const vi &rout) {
-    double new_min_cost = current_min_cost;
-    vi in_capacity = calculate_cap_rout(rout);
-    int u = -1, v = -1;
-
-    for (int i = 1; i < rout.size(); ++i) if (rout[i] && rout[i+1]) {
-        for (int j = i+2; j < rout.size(); ++j) if (rout[j] && rout[j+1]) {
-            // check constraint on capacity
-            if (in_capacity[i] - X[rout[i+1]].demand + X[rout[j+1]].demand > CAPACITY) continue;
-            if (in_capacity[j] - X[rout[j+1]].demand + X[rout[i+1]].demand > CAPACITY) continue;
-
-            double new_cost = current_min_cost;
-            new_cost -= distance_index(rout[i], rout[i+1]) + distance_index(rout[i+1], rout[i+2]);
-            new_cost -= distance_index(rout[j], rout[j+1]) + distance_index(rout[j+1], rout[j+2]);
-
-            new_cost += distance_index(rout[i], rout[j+1]) + distance_index(rout[j+1], rout[i+2]);
-            new_cost += distance_index(rout[j], rout[i+1]) + distance_index(rout[i+1], rout[j+2]);            
-
-            if (new_cost < new_min_cost) {
-                new_min_cost = new_cost;
-                u = i, v = j;
-            }
-        }
-    }
-
-    if (u == -1)
-        return {current_min_cost, rout};
-    
-    vi new_rout = rout;
-    swap(new_rout[u+1], new_rout[v+1]);
-    vNode P = convert_rout_to_nodes(new_rout);
-    return calculate_split(P);
-}
-
-pair < double, vi > local_search(vector < Node > P) {                    
-    pair < double, vi > result = calculate_split(P);
-    for (int loop = 0; loop < 200; ++loop) {
-        pair < double, vi > new_result;
-        new_result = shift_movement(result.first, result.second);
-        new_result = swap_movement(new_result.first, new_result.second);
-        new_result = shift_movement(new_result.first, new_result.second);
-        new_result = swap_movement(new_result.first, new_result.second);
-        new_result = _2_opt_movement(new_result.first, new_result.second);
-
-        P = convert_rout_to_nodes(new_result.second);        
-        result = calculate_split(P);        
-    }        
-    return result;
-}
-
-pair <double, vi> iterated_local_search() {
-    InitialSolution initialize_solution(N, CAPACITY, X);
-    vector <Node> P = initialize_solution.run2();
-    pair <double, vi> result = local_search(P);
-
-    srand(time(NULL));
-    const int ITERATE_TIME = 10;
     for (int iter = 0; iter < ITERATE_TIME; iter++) {
-        const int NUMBER_OF_SWAPS = 500;
+        const int NUMBER_OF_SWAPS = 1000;
 
         // kick solution by finding its subsequence' s next permutations
         int index[N+1];
@@ -345,41 +127,24 @@ pair <double, vi> iterated_local_search() {
         // next permutation by index
         for (int i = 0; i <= N; ++i) P[i] = X[index[i]];
 
-        pair < double, vi > new_result = local_search(P);
+        pair <double, vi> new_result = (new LocalSearch(P))->execute();        
         P = convert_rout_to_nodes(new_result.second);
-        cerr << result.first << " " << new_result.first << "\n";
+
+        if (DEBUG) cerr << "old -> new: " << result.first << " " << new_result.first << endl;
         if (new_result.first < result.first) result = new_result;        
     }
 
+    // result = splitting(P);
     return result;
 }
 
-string verify(double min_cost, vi rout) {
-    double total_cost = 0;
-    int cap = 0;
-    int previous = 0;
-    for (auto &r: rout) {
-        total_cost += distance_index(previous, r);
-        if (!r) {
-            cerr << "capacity is: " << cap << endl;
-            if (cap > CAPACITY) return "False\n";
-            cap = 0;        
-        } else {
-            cap += X[r].demand;
-        }        
-        previous = r;
-    }
-    cerr << total_cost << endl;
-    if (fabs(total_cost-min_cost) < 1) 
-        return "True\n";
-    else 
-        return "False\n";
-}
-
 int main(int argc, char **argv) {
-    string filename = "X-n153-k22.vrp";
-    if (argc > 1) filename = argv[1];
+    srand(time(NULL));
 
+    string filename = "X-n153-k22.vrp";
+    DEBUG = atoi(argv[1]);
+    if (argc > 2) filename = argv[2];
+    cerr << filename << endl;
     // fast read write on file
     ios_base::sync_with_stdio(false);
     
@@ -387,9 +152,7 @@ int main(int argc, char **argv) {
     const string fileDir = string(filesys::current_path()) + "/X/";
     
     // for all file in a directory
-    for (auto &p : filesys::directory_iterator(fileDir)) {
-        // cerr << p << endl;        
-    }
+    for (auto &p : filesys::directory_iterator(fileDir)) {}
 
     // testing on reading a .vrp file
     X.clear();
@@ -399,9 +162,11 @@ int main(int argc, char **argv) {
 
     // solution obtained by ils algorithm                
     pair <double, vi> answer = iterated_local_search();    
-    cerr << answer.first << endl;
+    cerr << "Answert is: " << answer.first << endl;
 
-    // cerr << verify(answer.first, answer.second);
+    // cerr << "Verify answer:\n" << verify(answer.first, answer.second);
     outFile(answer.first, answer.second, fileDir + "MyAnswer.sol");
+    
+    cerr << "file: " << filename << endl;    
     return 0;
 }
